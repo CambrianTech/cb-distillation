@@ -1,0 +1,14 @@
+*.pyc
+tags
+test
+models
+.idea
+/facades
+/facades_train
+.DS_Store
+*_train
+/mloutput
+/uploads
+/checkpoints
+/output
+.vscode/
