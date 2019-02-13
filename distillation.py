@@ -135,7 +135,7 @@ def main(args, _seed):
             train_spec = tf.estimator.TrainSpec(train_input_fn)
 
             eval_input_fn_args = cambrian.nn.InputFnArgs.eval(epochs=args["epochs"], batch_size=args["batch_size"])
-            eval_input_fn = cambrian.nn.get_input_fn_ab(a_specs, b_specs, eval_input_fn_args)
+            eval_input_fn = cambrian.nn.get_input_fn_ab(a_specs_eval, b_specs_eval, eval_input_fn_args)
             eval_spec = tf.estimator.EvalSpec(eval_input_fn)
 
             tf.estimator.train_and_evaluate(estimator, train_spec, eval_spec)
