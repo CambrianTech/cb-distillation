@@ -30,7 +30,7 @@ def distillation_config():
         
         "batch_size": 32,
         "ngf": 8,
-        "ndf": 8,
+        "ndf": 32,
         "init_stddev": 0.02,
 
         "crop_size": 256,
@@ -42,6 +42,7 @@ def distillation_config():
         "beta2": 0.999,
 
         "metric_loss": "bce",
+        "metric_weight": 100.0,
         
         "num_gpus": 1,
 

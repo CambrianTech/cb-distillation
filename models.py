@@ -33,27 +33,49 @@ class DistilledUNetModel(cambrian.nn.ModelBase):
         
         print("All targets:", all_targets)
 
-        loss = 0
+        gen_loss_metric = 0
 
+        # Metric loss
         for targets in all_targets:
             if self.args["metric_loss"] == "bce":
                 logits = self._generator_dict["logits"]
-                loss += tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=targets, logits=logits))
+                gen_loss_metric += tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=targets, logits=logits))
             elif self.args["metric_loss"] == "ce":
                 logits = self._generator_dict["logits"]
-                loss += tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(labels=targets, logits=logits))
+                gen_loss_metric += tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(labels=targets, logits=logits))
             elif self.args["metric_loss"] == "l1":
-                loss += tf.reduce_mean(tf.abs(targets - self.outputs))
+                gen_loss_metric += tf.reduce_mean(tf.abs(targets - self.outputs))
             elif self.args["metric_loss"] == "mse": 
-                loss += 0.5 * tf.reduce_mean(tf.square(targets - self.outputs))
+                gen_loss_metric += 0.5 * tf.reduce_mean(tf.square(targets - self.outputs))
             else:
                 raise Exception("Unknown metric loss %s" % self.args["metric_loss"])
 
+        # GAN loss only over real targets
+        with tf.name_scope("real_discriminator"):
+            with tf.variable_scope("discriminator"):
+                predict_real = create_discriminator(self.args, self.inputs, all_targets[0])
+
+        with tf.name_scope("fake_discriminator"):
+            with tf.variable_scope("discriminator", reuse=True):
+                predict_fake = create_discriminator(self.args, self.inputs, self.outputs)
+
+        disc_loss = tf.reduce_mean(-(tf.log(tf.sigmoid(predict_real) + EPS) + tf.log(1 - tf.sigmoid(predict_fake) + EPS)))
+        gen_loss_gan = tf.reduce_mean(-tf.log(tf.sigmoid(predict_fake) + EPS))
+
+        loss = self.args["metric_weight"] * gen_loss_metric + gen_loss_gan
+
+        with tf.name_scope("discriminator_train"):
+            discrim_tvars = [var for var in tf.trainable_variables() if var.name.startswith("discriminator")]
+            discrim_optim = tf.train.AdamOptimizer(self.args["lr_d"], self.args["beta1"], self.args["beta2"])
+            discrim_grads_and_vars = discrim_optim.compute_gradients(disc_loss, var_list=discrim_tvars)
+            discrim_train = discrim_optim.apply_gradients(discrim_grads_and_vars)
+
         with tf.name_scope("generator_train"):
-            gen_tvars = [var for var in tf.trainable_variables() if var.name.startswith("generator")]
-            gen_optim = tf.train.AdamOptimizer(self.args["lr_g"], self.args["beta1"], self.args["beta2"])
-            gen_grads_and_vars = gen_optim.compute_gradients(loss, var_list=gen_tvars)
-            gen_train = gen_optim.apply_gradients(gen_grads_and_vars, global_step=tf.train.get_global_step())
+            with tf.control_dependencies([discrim_train]):
+                gen_tvars = [var for var in tf.trainable_variables() if var.name.startswith("generator")]
+                gen_optim = tf.train.AdamOptimizer(self.args["lr_g"], self.args["beta1"], self.args["beta2"])
+                gen_grads_and_vars = gen_optim.compute_gradients(loss, var_list=gen_tvars)
+                gen_train = gen_optim.apply_gradients(gen_grads_and_vars, global_step=tf.train.get_global_step())
 
         # "gen_train" also includes discrim_train through control dependencies
         self._train_op = gen_train
@@ -73,6 +95,11 @@ class DistilledUNetModel(cambrian.nn.ModelBase):
         with tf.name_scope("outputs_summary"):
             summaries.append(tf.summary.image("output", tf.image.convert_image_dtype(self.outputs[:, :, :, :self.out_channels], dtype=tf.uint8)))
 
+        with tf.name_scope("scalar_summaries"):
+            summaries.append(tf.summary.scalar("discriminator_loss", disc_loss))
+            summaries.append(tf.summary.scalar("generator_loss_gan", gen_loss_gan))
+            summaries.append(tf.summary.scalar("generator_loss_metric", gen_loss_metric))
+
         for var in tf.trainable_variables():
             summaries.append(tf.summary.histogram(var.op.name + "/values", var))
 
@@ -88,6 +115,10 @@ class DistilledUNetModel(cambrian.nn.ModelBase):
     def set_targets(self, targets):
         super().set_targets(targets)
         self._setup_train()
+
+def discrim_conv(batch_input, out_channels, stride, init_stddev):
+    padded_input = tf.pad(batch_input, [[0, 0], [1, 1], [1, 1], [0, 0]], mode="CONSTANT")
+    return tf.layers.conv2d(padded_input, out_channels, kernel_size=4, strides=(stride, stride), padding="valid", kernel_initializer=tf.random_normal_initializer(0, init_stddev))
 
 def gen_conv(batch_input, out_channels, init_stddev, separable_conv):
     # [batch, in_height, in_width, in_channels] => [batch, out_height, out_width, out_channels]
@@ -213,3 +244,36 @@ def create_generator(args, generator_inputs, generator_outputs_channels):
     output_dict["output"] = layers[-1]
     
     return output_dict
+
+def create_discriminator(args, discrim_inputs, discrim_targets):
+    n_layers = 3
+    layers = []
+
+    # 2x [batch, height, width, in_channels] => [batch, height, width, in_channels * 2]
+    input = tf.concat([discrim_inputs, discrim_targets], axis=3)
+
+    # layer_1: [batch, 256, 256, in_channels * 2] => [batch, 128, 128, ndf]
+    with tf.variable_scope("layer_1"):
+        convolved = discrim_conv(input, args["ndf"], 2, args["init_stddev"])
+        rectified = tf.nn.leaky_relu(convolved, 0.2)
+        layers.append(rectified)
+
+    # layer_2: [batch, 128, 128, ndf] => [batch, 64, 64, ndf * 2]
+    # layer_3: [batch, 64, 64, ndf * 2] => [batch, 32, 32, ndf * 4]
+    # layer_4: [batch, 32, 32, ndf * 4] => [batch, 31, 31, ndf * 8]
+    for i in range(n_layers):
+        with tf.variable_scope("layer_%d" % (len(layers) + 1)):
+            out_channels = args["ndf"] * min(2**(i+1), 8)
+            stride = 1 if i == n_layers - 1 else 2  # last layer here has stride 1
+            convolved = discrim_conv(layers[-1], out_channels, stride, args["init_stddev"])
+            if not args["no_disc_bn"]:
+                convolved = layernorm(convolved) if args["layer_norm"] else batchnorm(convolved, args["init_stddev"])
+            rectified = tf.nn.leaky_relu(convolved, 0.2)
+            layers.append(rectified)
+
+    # layer_5: [batch, 31, 31, ndf * 8] => [batch, 30, 30, 1]
+    with tf.variable_scope("layer_%d" % (len(layers) + 1)):
+        output = discrim_conv(rectified, 1, 1, args["init_stddev"])
+        layers.append(output)
+
+    return layers[-1]
