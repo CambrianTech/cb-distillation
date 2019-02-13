@@ -47,6 +47,7 @@ def distillation_config():
         "num_gpus": 1,
 
         "separable_conv": False,
+        "no_disc_bn": False,
         "no_gen_bn": False,
         "layer_norm": False,
         "angle_output": False,
