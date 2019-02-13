@@ -16,7 +16,7 @@ class DistilledUNetModel(cambrian.nn.ModelBase):
            raise Exception("General was already set up.")
 
         with tf.variable_scope("generator"):
-            self.out_channels = self.args["b_specs"][0].channels
+            self.out_channels = self.args["out_channels"]
             self._generator_dict = create_generator(self.args, self.inputs, self.out_channels)
             self._outputs = self._generator_dict["output"]
 
@@ -25,7 +25,13 @@ class DistilledUNetModel(cambrian.nn.ModelBase):
             raise Exception("Train was already set up.")
 
         # Split targets by channels into the seperate targets
-        all_targets = [self.targets[:, :, :, self.out_channels*i:self.out_channels*(i+1)] for i in range(self.targets.shape[-1] // self.out_channels)]
+        all_targets = []
+        current_index = 0
+        for spec in self.args["b_specs"]:
+            all_targets.append(self.targets[:, :, :, current_index:current_index + self.out_channels])
+            current_index += spec.channels
+        
+        print("All targets:", all_targets)
 
         loss = 0
 
@@ -65,7 +71,7 @@ class DistilledUNetModel(cambrian.nn.ModelBase):
                 summaries.append(tf.summary.image("targets_%d" % spec.index, tf.image.convert_image_dtype(self.targets[:, :, :, spec.start_channel:spec.start_channel+spec.channels], dtype=tf.uint8)))
 
         with tf.name_scope("outputs_summary"):
-            summaries.append(tf.summary.image("output", tf.image.convert_image_dtype(self.outputs, dtype=tf.uint8)))
+            summaries.append(tf.summary.image("output", tf.image.convert_image_dtype(self.outputs[:, :, :, :1], dtype=tf.uint8)))
 
         for var in tf.trainable_variables():
             summaries.append(tf.summary.histogram(var.op.name + "/values", var))
@@ -172,51 +178,36 @@ def create_generator(args, generator_inputs, generator_outputs_channels):
         input = tf.concat([layers[-1], layers[0]], axis=3)
         rectified = tf.nn.relu(input)
 
-        # Make sure angle output is list of correct length
-        # TODO: Probably want this on the output spec (maybe add a dict to it or new subclass)
-        is_angle_output = args["angle_output"]
-        if not isinstance(is_angle_output, list) and not isinstance(is_angle_output, tuple):
-            is_angle_output = [is_angle_output]
-        if len(is_angle_output) != len(args["b_specs"]):
-            is_angle_output *= len(args["b_specs"])
+        if args["angle_output"]:
+            assert args["out_channels"] == 3
 
-        outputs = []
-        for is_angle, output_spec in zip(is_angle_output, args["b_specs"]):
-            if is_angle:
-                assert output_spec.channels == 3
+            # Produce 3D unit vector from 2 angles
+            angles = gen_deconv(rectified, 2, args["init_stddev"], args["separable_conv"])
+            angle_x = angles[:, :, :, 0:1]
+            angle_y = angles[:, :, :, 1:2]
 
-                # Produce 3D unit vector from 2 angles
-                angles = gen_deconv(rectified, 2, args["init_stddev"], args["separable_conv"])
-                angle_x = angles[:, :, :, 0:1]
-                angle_y = angles[:, :, :, 1:2]
+            sin_x, cos_x = tf.sin(angle_x), tf.cos(angle_x)
+            sin_y, cos_y = tf.sin(angle_y), tf.cos(angle_y)
+            output_x = sin_x * cos_y
+            output_y = cos_x * cos_y
+            output_z = sin_y
 
-                sin_x, cos_x = tf.sin(angle_x), tf.cos(angle_x)
-                sin_y, cos_y = tf.sin(angle_y), tf.cos(angle_y)
-                output_x = sin_x * cos_y
-                output_y = cos_x * cos_y
-                output_z = sin_y
+            output = tf.concat((output_x, output_y, output_z), axis=-1, )
 
-                output = tf.concat((output_x, output_y, output_z), axis=-1, )
-
-                # [-1, 1] -> [0, 1]
-                output = tf.div(output + 1., 2., name="output_%d" % output_spec.index)
+            # [-1, 1] -> [0, 1]
+            output = tf.div(output + 1., 2., name="output")
+        else:
+            output = gen_deconv(rectified, args["out_channels"], args["init_stddev"], args["separable_conv"])
+            if args["metric_loss"] == "bce" or args["metric_loss"] == "ce":
+                # Save logits when doing classification with entropy losses
+                output_dict["logits"] = output
+            if args["metric_loss"] == "ce":
+                # Use softmax when using cross entropy
+                output = tf.nn.softmax(output, name="output")
             else:
-                output = gen_deconv(rectified, output_spec.channels, args["init_stddev"], args["separable_conv"])
-                if args["metric_loss"] == "bce" or args["metric_loss"] == "ce":
-                    # Save logits when doing classification with entropy losses
-                    output_dict["logits"] = output
-                if args["metric_loss"] == "ce":
-                    # Use softmax when using cross entropy
-                    output = tf.softmax(output, name="output_%d" % output_spec.index)
-                else:
-                    output = tf.sigmoid(output, name="output_%d" % output_spec.index)
-                    
-            outputs.append(output)
+                output = tf.nn.sigmoid(output, name="output")
 
-        # Combine all outputs along channels
-        print(outputs)
-        output = tf.concat(outputs, axis=-1, name="output")
-
+        print(output)
         layers.append(output)
 
     output_dict["output"] = layers[-1]

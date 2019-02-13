@@ -41,14 +41,15 @@ def distillation_config():
         "beta1": 0.5,
         "beta2": 0.999,
 
-        "metric_loss": "ce",
+        "metric_loss": "bce",
         
         "num_gpus": 1,
 
         "separable_conv": False,
         "no_gen_bn": False,
         "layer_norm": False,
-        "angle_output": [False],
+        "angle_output": False,
+        "out_channels": 1,
     }
 
 def get_specs_from_args(args, a_input_key, b_input_key):
