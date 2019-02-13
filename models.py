@@ -71,7 +71,7 @@ class DistilledUNetModel(cambrian.nn.ModelBase):
                 summaries.append(tf.summary.image("targets_%d" % spec.index, tf.image.convert_image_dtype(self.targets[:, :, :, spec.start_channel:spec.start_channel+spec.channels], dtype=tf.uint8)))
 
         with tf.name_scope("outputs_summary"):
-            summaries.append(tf.summary.image("output", tf.image.convert_image_dtype(self.outputs[:, :, :, :1], dtype=tf.uint8)))
+            summaries.append(tf.summary.image("output", tf.image.convert_image_dtype(self.outputs[:, :, :, :self.out_channels], dtype=tf.uint8)))
 
         for var in tf.trainable_variables():
             summaries.append(tf.summary.histogram(var.op.name + "/values", var))
