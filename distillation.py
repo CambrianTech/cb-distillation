@@ -113,7 +113,7 @@ def main(args, _seed):
     args["a_specs"], args["b_specs"] = a_specs, b_specs
 
     # Get eval specifiers if an eval set was given
-    a_specs_eval, b_specs_eval = None, None if len(args["a_eval"]) == 0 or len(args["b_eval"]) == 0 else get_specs_from_args(args, "a_eval", "b_eval")
+    a_specs_eval, b_specs_eval = (None, None) if len(args["a_eval"]) == 0 or len(args["b_eval"]) == 0 else get_specs_from_args(args, "a_eval", "b_eval")
     assert a_specs_eval is None or len(a_specs) == len(a_specs_eval)
     assert b_specs_eval is None or len(b_specs) == len(b_specs_eval)
 
