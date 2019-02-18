@@ -136,9 +136,9 @@ def get_parse_image_ab_fn(input_specs, output_specs, temporal_inputs=[]):
 
             return result
 
-        for input_spec, input_image in zip(input_specs, input_images):
-            if input_spec in temporal_inputs:
-                input_dict[cambrian.nn.get_input_name(len(input_dict))].append(_warp_temporally(input_image))
+        for output_spec, output_image in zip(output_specs, output_images):
+            if output_spec in temporal_inputs:
+                input_dict[cambrian.nn.get_input_name(len(input_dict))].append(_warp_temporally(output_image))
 
         return input_dict, output_dict
     return parse_image_ab
@@ -183,14 +183,14 @@ def main(args, _seed):
     if args["mode"] == "train":
         train_input_fn_args = cambrian.nn.InputFnArgs.train(epochs=args["epochs"], batch_size=args["batch_size"], random_flip=False)
         train_input_fn_args.augment = False
-        train_input_fn = cambrian.nn.get_input_fn_ab(a_specs, b_specs, train_input_fn_args, parse_image_fn=get_parse_image_ab_fn(a_specs, b_specs, temporal_inputs=[a_specs[i] for i in args["a_temporals"]]))
+        train_input_fn = cambrian.nn.get_input_fn_ab(a_specs, b_specs, train_input_fn_args, parse_image_fn=get_parse_image_ab_fn(a_specs, b_specs, temporal_inputs=[b_specs[i] for i in args["a_temporals"]]))
         
         # Train and eval if eval set was given, otherwise just train
         if a_specs_eval is not None and b_specs_eval is not None:
             train_spec = tf.estimator.TrainSpec(train_input_fn)
 
             eval_input_fn_args = cambrian.nn.InputFnArgs.eval(epochs=args["epochs"], batch_size=args["batch_size"])
-            eval_input_fn = cambrian.nn.get_input_fn_ab(a_specs_eval, b_specs_eval, eval_input_fn_args, parse_image_fn=get_parse_image_ab_fn(a_specs_eval, b_specs_eval, temporal_inputs=[a_specs_eval[i] for i in args["a_temporals"]]))
+            eval_input_fn = cambrian.nn.get_input_fn_ab(a_specs_eval, b_specs_eval, eval_input_fn_args, parse_image_fn=get_parse_image_ab_fn(a_specs_eval, b_specs_eval, temporal_inputs=[b_specs_eval[i] for i in args["a_temporals"]]))
             eval_spec = tf.estimator.EvalSpec(eval_input_fn)
 
             tf.estimator.train_and_evaluate(estimator, train_spec, eval_spec)
@@ -198,9 +198,9 @@ def main(args, _seed):
             estimator.train(train_input_fn)
     elif args["mode"] == "test":
         eval_input_fn_args = cambrian.nn.InputFnArgs.eval(epochs=args["epochs"], batch_size=args["batch_size"])
-        eval_input_fn = cambrian.nn.get_input_fn_ab(a_specs, b_specs, eval_input_fn_args, parse_image_fn=get_parse_image_ab_fn(a_specs, b_specs, temporal_inputs=[a_specs[i] for i in args["a_temporals"]]))
+        eval_input_fn = cambrian.nn.get_input_fn_ab(a_specs, b_specs, eval_input_fn_args, parse_image_fn=get_parse_image_ab_fn(a_specs, b_specs, temporal_inputs=[b_specs[i] for i in args["a_temporals"]]))
         estimator.evaluate(eval_input_fn)
     elif args["mode"] == "export":
-        estimator.export_saved_model(args["export_dir"], cambrian.nn.get_serving_input_receiver_fn(a_specs + [a_specs[i] for i in args["a_temporals"]]))
+        estimator.export_saved_model(args["export_dir"], cambrian.nn.get_serving_input_receiver_fn(a_specs + [b_specs[i] for i in args["a_temporals"]]))
     else:
         print("Unknown mode", args.mode)
