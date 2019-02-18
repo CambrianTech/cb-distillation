@@ -120,11 +120,11 @@ def get_parse_image_ab_fn(input_specs, output_specs, temporal_inputs=[]):
             # (x', y') = ((a0 x + a1 y + a2) / k, (b0 x + b1 y + b2) / k)
             # k = c0 x + c1 y + 1
             warp_params = [
-                0.9 + 0.2 * tf.random.uniform((2,), tf.float32),
-                50 * 2 * (tf.random.uniform((1,), tf.float32) - 0.5),
-                0.9 + 0.2 * tf.random.uniform((2,), tf.float32),
-                50 * 2 * (tf.random.uniform((1,), tf.float32) - 0.5),
-                0.9 + 0.2 * tf.random.uniform((2,), tf.float32),
+                tf.random.uniform((2,), 0.9, 1.1, tf.float32),
+                tf.random.uniform((2,), -50, 50, tf.float32),
+                tf.random.uniform((2,), 0.9, 1.1, tf.float32),
+                tf.random.uniform((2,), -50, 50, tf.float32),
+                tf.random.uniform((2,), 0.9, 1.1, tf.float32),
             ]
 
             warped = tf.contrib.image.transform(image, warp_params, interpolation="BILINEAR")
