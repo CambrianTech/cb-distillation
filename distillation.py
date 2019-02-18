@@ -138,7 +138,7 @@ def get_parse_image_ab_fn(input_specs, output_specs, temporal_inputs=[]):
 
         for output_spec, output_image in zip(output_specs, output_images):
             if output_spec in temporal_inputs:
-                input_dict[cambrian.nn.get_input_name(len(input_dict))].append(_warp_temporally(output_image))
+                input_dict[cambrian.nn.get_input_name(len(input_dict))] = _warp_temporally(output_image)
 
         return input_dict, output_dict
     return parse_image_ab
