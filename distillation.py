@@ -21,6 +21,7 @@ def distillation_config():
         "b_channels": [3],
         "a_eval": [],
         "b_eval": [],
+        "a_temporals": [],
 
         "mode": "train",
         "model_dir": "models",
@@ -91,6 +92,57 @@ def get_specs_from_args(args, a_input_key, b_input_key):
 
     return a_specs, b_specs
 
+def get_parse_image_ab_fn(input_specs, output_specs, temporal_inputs=[]):
+    def parse_image_ab(*file_names):
+        num_inputs = len(input_specs)
+        num_outputs = len(output_specs)
+        assert len(file_names) == num_inputs + num_outputs
+
+        def _parse(file_name, spec):
+            image_data = tf.read_file(file_name)
+            image = tf.image.convert_image_dtype(tf.image.decode_png(image_data, channels=spec.channels), spec.dtype)
+            image = tf.image.resize_images(image, [spec.scale_size, spec.scale_size], method=tf.image.ResizeMethod.AREA) #reduces artifacts, consider as part of specs
+            return image
+            
+        specs = input_specs + output_specs
+
+        images = [_parse(file_name, spec) for file_name, spec in zip(file_names, specs)]
+
+        input_images = images[:num_inputs]
+        output_images = images[num_inputs:]
+        
+        input_dict = {cambrian.nn.get_input_name(i): img for i, img in enumerate(input_images)}
+        output_dict = {cambrian.nn.get_output_name(i): img for i, img in enumerate(output_images)}
+
+        # Add temporally warped inputs
+        def _warp_temporally(image):
+            # [a0, a1, a2, b0, b1, b2, c0, c1]
+            # (x', y') = ((a0 x + a1 y + a2) / k, (b0 x + b1 y + b2) / k)
+            # k = c0 x + c1 y + 1
+            warp_params = [
+                0.9 + 0.2 * tf.random.uniform((2,), tf.float32),
+                50 * 2 * (tf.random.uniform((1,), tf.float32) - 0.5),
+                0.9 + 0.2 * tf.random.uniform((2,), tf.float32),
+                50 * 2 * (tf.random.uniform((1,), tf.float32) - 0.5),
+                0.9 + 0.2 * tf.random.uniform((2,), tf.float32),
+            ]
+
+            warped = tf.contrib.image.transform(image, warp_params, interpolation="BILINEAR")
+
+            # 10% chance to have a blank image (ie. first frame)
+            p_empty = tf.random_uniform(shape=[], minval=0., maxval=1., dtype=tf.float32)
+            empty = tf.less(p_empty, 0.1)
+            result = tf.cond(empty, tf.zeros_like(image), warped)
+
+            return result
+
+        for input_spec, input_image in zip(input_specs, input_images):
+            if input_spec in temporal_inputs:
+                input_dict[cambrian.nn.get_input_name(len(input_dict))].append(_warp_temporally(input_image))
+
+        return input_dict, output_dict
+    return parse_image_ab
+
 @ex.automain
 @LogFileWriter(ex)
 def main(args, _seed):
@@ -131,14 +183,14 @@ def main(args, _seed):
     if args["mode"] == "train":
         train_input_fn_args = cambrian.nn.InputFnArgs.train(epochs=args["epochs"], batch_size=args["batch_size"], random_flip=False)
         train_input_fn_args.augment = False
-        train_input_fn = cambrian.nn.get_input_fn_ab(a_specs, b_specs, train_input_fn_args)
+        train_input_fn = cambrian.nn.get_input_fn_ab(a_specs, b_specs, train_input_fn_args, parse_image_fn=get_parse_image_ab_fn(a_specs, b_specs, temporal_inputs=[a_specs[i] for i in args["a_temporals"]]))
         
         # Train and eval if eval set was given, otherwise just train
         if a_specs_eval is not None and b_specs_eval is not None:
             train_spec = tf.estimator.TrainSpec(train_input_fn)
 
             eval_input_fn_args = cambrian.nn.InputFnArgs.eval(epochs=args["epochs"], batch_size=args["batch_size"])
-            eval_input_fn = cambrian.nn.get_input_fn_ab(a_specs_eval, b_specs_eval, eval_input_fn_args)
+            eval_input_fn = cambrian.nn.get_input_fn_ab(a_specs_eval, b_specs_eval, eval_input_fn_args, parse_image_fn=get_parse_image_ab_fn(a_specs_eval, b_specs_eval, temporal_inputs=[a_specs_eval[i] for i in args["a_temporals"]]))
             eval_spec = tf.estimator.EvalSpec(eval_input_fn)
 
             tf.estimator.train_and_evaluate(estimator, train_spec, eval_spec)
@@ -146,9 +198,9 @@ def main(args, _seed):
             estimator.train(train_input_fn)
     elif args["mode"] == "test":
         eval_input_fn_args = cambrian.nn.InputFnArgs.eval(epochs=args["epochs"], batch_size=args["batch_size"])
-        eval_input_fn = cambrian.nn.get_input_fn_ab(a_specs, b_specs, eval_input_fn_args)
+        eval_input_fn = cambrian.nn.get_input_fn_ab(a_specs, b_specs, eval_input_fn_args, parse_image_fn=get_parse_image_ab_fn(a_specs, b_specs, temporal_inputs=[a_specs[i] for i in args["a_temporals"]]))
         estimator.evaluate(eval_input_fn)
     elif args["mode"] == "export":
-        estimator.export_saved_model(args["export_dir"], cambrian.nn.get_serving_input_receiver_fn(a_specs))
+        estimator.export_saved_model(args["export_dir"], cambrian.nn.get_serving_input_receiver_fn(a_specs + [a_specs[i] for i in args["a_temporals"]]))
     else:
         print("Unknown mode", args.mode)
