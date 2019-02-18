@@ -116,21 +116,25 @@ def get_parse_image_ab_fn(input_specs, output_specs, temporal_inputs=[]):
 
         # Add temporally warped inputs
         def _warp_temporally(image):
-            # [a0, a1, a2, b0, b1, b2, c0, c1]
-            # (x', y') = ((a0 x + a1 y + a2) / k, (b0 x + b1 y + b2) / k)
-            # k = c0 x + c1 y + 1
-            warp_params = [
-                tf.random.uniform((2,), 0.9, 1.1, tf.float32),
-                tf.random.uniform((2,), -50, 50, tf.float32),
-                tf.random.uniform((2,), 0.9, 1.1, tf.float32),
-                tf.random.uniform((2,), -50, 50, tf.float32),
-                tf.random.uniform((2,), 0.9, 1.1, tf.float32),
-            ]
+            def _warp_fn():
+                # [a0, a1, a2, b0, b1, b2, c0, c1]
+                # (x', y') = ((a0 x + a1 y + a2) / k, (b0 x + b1 y + b2) / k)
+                # k = c0 x + c1 y + 1
+                warp_params = tf.concat([
+                    tf.random.uniform((1, 2), 0.9, 1.1, tf.float32),
+                    tf.random.uniform((1, 1), -50, 50, tf.float32),
+                    tf.random.uniform((1, 2), 0.9, 1.1, tf.float32),
+                    tf.random.uniform((1 ,2), -50, 50, tf.float32),
+                    tf.random.uniform((1, 2), 0.9, 1.1, tf.float32),
+                ], axis=1)
+                
+                return tf.contrib.image.transform(image, warp_params, interpolation="BILINEAR")
+
 
             # 10% chance to have a blank image (ie. first frame)
             p_empty = tf.random_uniform(shape=[], minval=0., maxval=1., dtype=tf.float32)
             empty = tf.less(p_empty, 0.1)
-            result = tf.cond(empty, lambda: tf.zeros_like(image), lambda: tf.contrib.image.transform(image, warp_params, interpolation="BILINEAR"))
+            result = tf.cond(empty, lambda: tf.zeros_like(image), _warp_fn)
 
             return result
 
