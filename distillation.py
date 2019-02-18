@@ -172,7 +172,7 @@ def main(args, _seed):
     print("A eval specs:", a_specs_eval)
     print("B eval specs:", b_specs_eval)
     
-    model_fn = cambrian.nn.get_model_fn_ab(DistilledUNetModel, a_specs, b_specs, args=args)
+    model_fn = cambrian.nn.get_model_fn_ab(DistilledUNetModel, a_specs + [b_specs[i] for i in args["a_temporals"]], b_specs, args=args)
 
     estimator = tf.estimator.Estimator(model_fn=model_fn, config=run_config, params=args)
 
