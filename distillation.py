@@ -127,12 +127,10 @@ def get_parse_image_ab_fn(input_specs, output_specs, temporal_inputs=[]):
                 tf.random.uniform((2,), 0.9, 1.1, tf.float32),
             ]
 
-            warp_fn = lambda im: tf.contrib.image.transform(image, warp_params, interpolation="BILINEAR")
-
             # 10% chance to have a blank image (ie. first frame)
             p_empty = tf.random_uniform(shape=[], minval=0., maxval=1., dtype=tf.float32)
             empty = tf.less(p_empty, 0.1)
-            result = tf.cond(empty, tf.zeros_like, warp_fn)
+            result = tf.cond(empty, lambda: tf.zeros_like(image), lambda: tf.contrib.image.transform(image, warp_params, interpolation="BILINEAR"))
 
             return result
 
