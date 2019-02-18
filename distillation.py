@@ -18,7 +18,7 @@ def distillation_config():
         "a_input": [],
         "b_input": [],
         "a_channels": [3],
-        "b_channels": [3],
+        "b_channels": [1],
         "a_eval": [],
         "b_eval": [],
         "a_temporals": [],
@@ -100,7 +100,7 @@ def get_parse_image_ab_fn(input_specs, output_specs, temporal_inputs=[]):
 
         def _parse(file_name, spec):
             image_data = tf.read_file(file_name)
-            image = tf.image.convert_image_dtype(tf.image.decode_png(image_data, channels=spec.channels), spec.dtype)
+            image = tf.image.convert_image_dtype(tf.image.decode_png(image_data, channels=3), spec.dtype)[:, :, :spec.channels]
             image = tf.image.resize_images(image, [spec.scale_size, spec.scale_size], method=tf.image.ResizeMethod.AREA) #reduces artifacts, consider as part of specs
             return image
             
@@ -123,11 +123,11 @@ def get_parse_image_ab_fn(input_specs, output_specs, temporal_inputs=[]):
                 warp_params = tf.concat([
                     tf.random.uniform((1, 1), 0.9, 1.1, tf.float32), # a0
                     tf.random.uniform((1, 1), -0.1, 0.1, tf.float32), # a1
-                    tf.random.uniform((1, 1), -0.2, 0.2, tf.float32), # a2
+                    tf.random.uniform((1, 1), -50, 50, tf.float32), # a2
                     tf.random.uniform((1, 1), -0.1, 0.1, tf.float32), # b0
                     tf.random.uniform((1, 1), 0.9, 1.1, tf.float32), # b1
-                    tf.random.uniform((1 ,1), -0.2, 0.2, tf.float32), # b2
-                    tf.random.uniform((1, 2), -0.1, 0.1, tf.float32), # c0, c1
+                    tf.random.uniform((1 ,1), -50, 50, tf.float32), # b2
+                    tf.zeros((1, 2), tf.float32) # c0, c1
                 ], axis=1)
                 
                 return tf.contrib.image.transform(image, warp_params, interpolation="BILINEAR")
