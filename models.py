@@ -88,10 +88,11 @@ class DistilledUNetModel(cambrian.nn.ModelBase):
             with tf.name_scope("inputs_summary"):
                 summaries.append(tf.summary.image("inputs_%d" % spec.index, tf.image.convert_image_dtype(self.inputs[:, :, :, spec.start_channel:spec.start_channel+spec.channels], dtype=tf.uint8)))
 
+        index_offset = sum(map(lambda spec: spec.channels, self.args["a_specs"]))
         for spec in [self.args["b_specs"][i] for i in self.args["a_temporals"]]:
             with tf.name_scope("inputs_warped_summary"):
-                index_offset = sum(map(lambda spec: spec.channels, self.args["a_specs"]))
-                summaries.append(tf.summary.image("inputs_%d_warped" % spec.index, tf.image.convert_image_dtype(self.inputs[:, :, :, index_offset + spec.start_channel:index_offset + spec.start_channel+spec.channels], dtype=tf.uint8)))
+                summaries.append(tf.summary.image("inputs_%d_warped" % spec.index, tf.image.convert_image_dtype(self.inputs[:, :, :, index_offset:index_offset+spec.channels], dtype=tf.uint8)))
+                index_offset += spec.channels
         
         for spec in self.args["b_specs"]:
             with tf.name_scope("targets_summary"):
