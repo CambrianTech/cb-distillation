@@ -124,7 +124,7 @@ def get_parse_image_ab_fn(input_specs, output_specs, temporal_inputs=[]):
                     tf.random.uniform((1, 2), 0.9, 1.1, tf.float32),
                     tf.random.uniform((1, 1), -50, 50, tf.float32),
                     tf.random.uniform((1, 2), 0.9, 1.1, tf.float32),
-                    tf.random.uniform((1 ,2), -50, 50, tf.float32),
+                    tf.random.uniform((1 ,1), -50, 50, tf.float32),
                     tf.random.uniform((1, 2), 0.9, 1.1, tf.float32),
                 ], axis=1)
                 
