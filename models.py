@@ -142,7 +142,7 @@ def gen_res_conv(batch_input, squeeze_div):
     y = tf.layers.conv2d(batch_input, res_channels, kernel_size=1, padding="SAME", kernel_initializer=initializer, activation=tf.nn.elu)
     y = tf.layers.conv2d(y, res_channels, kernel_size=3, padding="SAME", kernel_initializer=initializer, activation=tf.nn.elu)
     y = tf.layers.conv2d(y, out_channels, kernel_size=1, padding="SAME", kernel_initializer=initializer, activation=tf.nn.elu)
-    return y + batch_input
+    return tf.nn.elu(y + batch_input)
 
 def gen_ref_conv(color_input, aux_output, filters):
     initializer = tf.orthogonal_initializer()
@@ -150,11 +150,20 @@ def gen_ref_conv(color_input, aux_output, filters):
 
     combined = tf.concat([color_input, aux_output], axis=-1)
 
-    y1 = tf.layers.conv2d(combined, 32, kernel_size=3, padding="SAME", kernel_initializer=initializer, activation=tf.nn.elu)
-    y2 = tf.layers.conv2d(y1, 32, kernel_size=3, padding="SAME", kernel_initializer=initializer, activation=tf.nn.elu)
-    y3 = tf.layers.conv2d(y2, out_channels, kernel_size=3, padding="SAME", kernel_initializer=initializer)
+    x1 = tf.layers.conv2d(combined, filters, kernel_size=1, padding="SAME", kernel_initializer=initializer)
 
-    return aux_output + y3
+    y = tf.layers.conv2d(x1, filters, kernel_size=4, padding="SAME", kernel_initializer=initializer, activation=tf.nn.elu)
+    y = tf.layers.conv2d(y, filters, kernel_size=4, padding="SAME", kernel_initializer=initializer, activation=tf.nn.elu)
+    y = tf.layers.conv2d(y, filters, kernel_size=4, padding="SAME", kernel_initializer=initializer, activation=tf.nn.elu)
+
+    x2 = tf.layers.conv2d(tf.concat([x1, y], axis=-1), filters, kernel_size=1, padding="SAME", kernel_initializer=initializer, activation=tf.nn.elu)
+    x2 = batchnorm(x2)
+
+    y = tf.layers.conv2d(x2, filters, kernel_size=4, padding="SAME", kernel_initializer=initializer, activation=tf.nn.elu)
+    y = tf.layers.conv2d(y, filters, kernel_size=4, padding="SAME", kernel_initializer=initializer, activation=tf.nn.elu)
+    y = tf.layers.conv2d(y, filters, kernel_size=4, padding="SAME", kernel_initializer=initializer, activation=tf.nn.elu)
+
+    return tf.layers.conv2d(tf.concat([x1, x2, y], axis=-1), out_channels, kernel_size=1, padding="SAME", kernel_initializer=initializer)
 
 def batchnorm(inputs):
     return tf.layers.batch_normalization(inputs, axis=3, epsilon=1e-5, momentum=0.1, training=True, gamma_initializer=tf.ones_initializer())
@@ -178,6 +187,7 @@ def create_generator(args, generator_inputs, generator_outputs_channels):
         res_output = down_3
         for _ in range(6):
             res_output = gen_res_conv(res_output, squeeze_div=16)
+            res_output = batchnorm(res_output)
 
     with tf.variable_scope("up_convs"):
         up_3 = gen_up_conv(tf.concat([down_3, res_output], axis=-1), out_channels=2*ngf, kernel_size=4, strides=2)
@@ -212,7 +222,7 @@ def create_discriminator(args, discrim_inputs, discrim_targets):
 
     with tf.variable_scope("layer_1"):
         convolved = discrim_conv(inputs, args["ndf"], 2)
-        rectified = tf.nn.leaky_relu(convolved, 0.2)
+        rectified = tf.nn.elu(convolved)
         layers.append(rectified)
 
     for i in range(n_layers):
@@ -222,7 +232,7 @@ def create_discriminator(args, discrim_inputs, discrim_targets):
             convolved = discrim_conv(layers[-1], out_channels, stride)
             if not args["no_disc_bn"]:
                 convolved = layernorm(convolved) if args["layer_norm"] else batchnorm(convolved)
-            rectified = tf.nn.leaky_relu(convolved, 0.2)
+            rectified = tf.nn.elu(convolved)
             layers.append(rectified)
 
     with tf.variable_scope("layer_%d" % (len(layers) + 1)):

@@ -30,7 +30,7 @@ def distillation_config():
         "epochs": 3000,
         
         "batch_size": 32,
-        "ngf": 8,
+        "ngf": 32,
         "ndf": 32,
         "init_stddev": 0.02,
 
@@ -92,7 +92,7 @@ def get_specs_from_args(args, a_input_key, b_input_key):
 
     return a_specs, b_specs
 
-def get_parse_image_ab_fn(input_specs, output_specs, temporal_inputs=[]):
+def get_parse_image_ab_fn(input_specs, output_specs, temporal_inputs=[], augment=False):
     def parse_image_ab(*file_names):
         num_inputs = len(input_specs)
         num_outputs = len(output_specs)
@@ -187,14 +187,14 @@ def main(args, _seed):
     if args["mode"] == "train":
         train_input_fn_args = cambrian.nn.InputFnArgs.train(epochs=args["epochs"], batch_size=args["batch_size"], random_flip=False)
         train_input_fn_args.augment = False
-        train_input_fn = cambrian.nn.get_input_fn_ab(a_specs, b_specs, train_input_fn_args, parse_image_fn=get_parse_image_ab_fn(a_specs, b_specs, temporal_inputs=[b_specs[i] for i in args["a_temporals"]]))
+        train_input_fn = cambrian.nn.get_input_fn_ab(a_specs, b_specs, train_input_fn_args, parse_image_fn=get_parse_image_ab_fn(a_specs, b_specs, temporal_inputs=[b_specs[i] for i in args["a_temporals"]], augment=True))
         
         # Train and eval if eval set was given, otherwise just train
         if a_specs_eval is not None and b_specs_eval is not None:
             train_spec = tf.estimator.TrainSpec(train_input_fn)
 
             eval_input_fn_args = cambrian.nn.InputFnArgs.eval(epochs=args["epochs"], batch_size=args["batch_size"])
-            eval_input_fn = cambrian.nn.get_input_fn_ab(a_specs_eval, b_specs_eval, eval_input_fn_args, parse_image_fn=get_parse_image_ab_fn(a_specs_eval, b_specs_eval, temporal_inputs=[b_specs_eval[i] for i in args["a_temporals"]]))
+            eval_input_fn = cambrian.nn.get_input_fn_ab(a_specs_eval, b_specs_eval, eval_input_fn_args, parse_image_fn=get_parse_image_ab_fn(a_specs_eval, b_specs_eval, temporal_inputs=[b_specs_eval[i] for i in args["a_temporals"]], augment=True))
             eval_spec = tf.estimator.EvalSpec(eval_input_fn)
 
             tf.estimator.train_and_evaluate(estimator, train_spec, eval_spec)
