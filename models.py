@@ -150,7 +150,7 @@ def gen_ref_conv(color_input, aux_output, filters):
 
     combined = tf.concat([color_input, aux_output], axis=-1)
 
-    x1 = tf.layers.conv2d(combined, filters, kernel_size=1, padding="SAME", kernel_initializer=initializer)
+    x1 = tf.layers.conv2d(combined, filters, kernel_size=1, padding="SAME", kernel_initializer=initializer, activation=tf.nn.elu)
 
     y = tf.layers.conv2d(x1, filters, kernel_size=4, padding="SAME", kernel_initializer=initializer, activation=tf.nn.elu)
     y = tf.layers.conv2d(y, filters, kernel_size=4, padding="SAME", kernel_initializer=initializer, activation=tf.nn.elu)
