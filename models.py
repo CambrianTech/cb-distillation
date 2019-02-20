@@ -141,7 +141,7 @@ def gen_res_conv(batch_input, squeeze_div):
     res_channels = out_channels / squeeze_div
     y = tf.layers.conv2d(batch_input, res_channels, kernel_size=1, padding="SAME", kernel_initializer=initializer, activation=tf.nn.elu)
     y = tf.layers.conv2d(y, res_channels, kernel_size=3, padding="SAME", kernel_initializer=initializer, activation=tf.nn.elu)
-    y = tf.layers.conv2d(y, out_channels, kernel_size=1, padding="SAME", kernel_initializer=initializer, activation=tf.nn.elu)
+    y = tf.layers.conv2d(y, out_channels, kernel_size=1, padding="SAME", kernel_initializer=initializer)
     return tf.nn.elu(y + batch_input)
 
 def gen_ref_conv(color_input, aux_output, filters):
@@ -185,7 +185,7 @@ def create_generator(args, generator_inputs, generator_outputs_channels):
 
     with tf.variable_scope("res_convs"):
         res_output = down_3
-        for _ in range(6):
+        for _ in range(21):
             res_output = gen_res_conv(res_output, squeeze_div=16)
             res_output = batchnorm(res_output)
 
@@ -215,7 +215,7 @@ def create_generator(args, generator_inputs, generator_outputs_channels):
     return output_dict
 
 def create_discriminator(args, discrim_inputs, discrim_targets):
-    n_layers = 3
+    n_layers = 4
     layers = []
 
     inputs = tf.concat([discrim_inputs, discrim_targets], axis=3)
