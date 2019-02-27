@@ -50,28 +50,37 @@ class DistilledUNetModel(cambrian.nn.ModelBase):
             else:
                 raise Exception("Unknown metric loss %s" % self.args["metric_loss"])
 
-        # GAN loss only over real targets
-        with tf.name_scope("real_discriminator"):
-            with tf.variable_scope("discriminator"):
-                predict_real = create_discriminator(self.args, self.inputs, all_targets[0])
+        loss = gen_loss_metric
 
-        with tf.name_scope("fake_discriminator"):
-            with tf.variable_scope("discriminator", reuse=True):
-                predict_fake = create_discriminator(self.args, self.inputs, self.outputs)
+        if not self.args["no_gan"]:
+            # GAN loss only over real targets
+            with tf.name_scope("real_discriminator"):
+                with tf.variable_scope("discriminator"):
+                    predict_real = create_discriminator(self.args, self.inputs, all_targets[0])
 
-        disc_loss = tf.reduce_mean(-(tf.log(tf.sigmoid(predict_real) + EPS) + tf.log(1 - tf.sigmoid(predict_fake) + EPS)))
-        gen_loss_gan = tf.reduce_mean(-tf.log(tf.sigmoid(predict_fake) + EPS))
+            with tf.name_scope("fake_discriminator"):
+                with tf.variable_scope("discriminator", reuse=True):
+                    predict_fake = create_discriminator(self.args, self.inputs, self.outputs)
 
-        loss = self.args["metric_weight"] * gen_loss_metric + gen_loss_gan
+            disc_loss = tf.reduce_mean(-(tf.log(tf.sigmoid(predict_real) + EPS) + tf.log(1 - tf.sigmoid(predict_fake) + EPS)))
+            gen_loss_gan = tf.reduce_mean(-tf.log(tf.sigmoid(predict_fake) + EPS))
 
-        with tf.name_scope("discriminator_train"):
-            discrim_tvars = [var for var in tf.trainable_variables() if var.name.startswith("discriminator")]
-            discrim_optim = tf.train.AdamOptimizer(self.args["lr_d"], self.args["beta1"], self.args["beta2"])
-            discrim_grads_and_vars = discrim_optim.compute_gradients(disc_loss, var_list=discrim_tvars)
-            discrim_train = discrim_optim.apply_gradients(discrim_grads_and_vars)
+            loss = self.args["metric_weight"] * loss + gen_loss_gan
 
-        with tf.name_scope("generator_train"):
-            with tf.control_dependencies([discrim_train]):
+            with tf.name_scope("discriminator_train"):
+                discrim_tvars = [var for var in tf.trainable_variables() if var.name.startswith("discriminator")]
+                discrim_optim = tf.train.AdamOptimizer(self.args["lr_d"], self.args["beta1"], self.args["beta2"])
+                discrim_grads_and_vars = discrim_optim.compute_gradients(disc_loss, var_list=discrim_tvars)
+                discrim_train = discrim_optim.apply_gradients(discrim_grads_and_vars)
+
+            with tf.name_scope("generator_train"):
+                with tf.control_dependencies([discrim_train]):
+                    gen_tvars = [var for var in tf.trainable_variables() if var.name.startswith("generator")]
+                    gen_optim = tf.train.AdamOptimizer(self.args["lr_g"], self.args["beta1"], self.args["beta2"])
+                    gen_grads_and_vars = gen_optim.compute_gradients(loss, var_list=gen_tvars)
+                    gen_train = gen_optim.apply_gradients(gen_grads_and_vars, global_step=tf.train.get_global_step())
+        else:
+            with tf.name_scope("generator_train"):
                 gen_tvars = [var for var in tf.trainable_variables() if var.name.startswith("generator")]
                 gen_optim = tf.train.AdamOptimizer(self.args["lr_g"], self.args["beta1"], self.args["beta2"])
                 gen_grads_and_vars = gen_optim.compute_gradients(loss, var_list=gen_tvars)
@@ -102,8 +111,9 @@ class DistilledUNetModel(cambrian.nn.ModelBase):
             summaries.append(tf.summary.image("output", tf.image.convert_image_dtype(self.outputs[:, :, :, :self.out_channels], dtype=tf.uint8)))
 
         with tf.name_scope("scalar_summaries"):
-            summaries.append(tf.summary.scalar("discriminator_loss", disc_loss))
-            summaries.append(tf.summary.scalar("generator_loss_gan", gen_loss_gan))
+            if not self.args["no_gan"]:
+                summaries.append(tf.summary.scalar("discriminator_loss", disc_loss))
+                summaries.append(tf.summary.scalar("generator_loss_gan", gen_loss_gan))
             summaries.append(tf.summary.scalar("generator_loss_metric", gen_loss_metric))
 
         for var in tf.trainable_variables():

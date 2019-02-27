@@ -53,6 +53,8 @@ def distillation_config():
         "layer_norm": False,
         "angle_output": False,
         "out_channels": 1,
+
+        "no_gan": False,
     }
 
 def get_specs_from_args(args, a_input_key, b_input_key):
